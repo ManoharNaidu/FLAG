@@ -5,10 +5,10 @@ from torch_geometric.data import Data
 from torch_geometric.loader import NeighborLoader
 from torch.utils.data import random_split
 
-data = torch.load('Instagram/instagram.pt')
-train_loader = torch.load('Instagram/0_10_0/train_sampler.pt')
-val_loader = torch.load('Instagram/0_10_0/val_sampler.pt')
-test_loader = torch.load('Instagram/0_10_0/test_sampler.pt')
+data = safe_torch_load('Instagram/instagram.pt')
+train_loader = safe_torch_load('Instagram/0_10_0/train_sampler.pt')
+val_loader = safe_torch_load('Instagram/0_10_0/val_sampler.pt')
+test_loader = safe_torch_load('Instagram/0_10_0/test_sampler.pt')
 
 system_instruction = "Don't have extra blank lines and symbols after Answer! "
 global_prompt = (

@@ -5,10 +5,10 @@ from torch_geometric.data import Data
 from torch_geometric.loader import NeighborLoader
 from torch.utils.data import random_split
 
-data = torch.load('Reddit/reddit1.pt')
-train_loader = torch.load('Reddit/0_10_0/train_sampler1.pt')
-val_loader = torch.load('Reddit/0_10_0/val_sampler1.pt')
-test_loader = torch.load('Reddit/0_10_0/test_sampler1.pt')
+data = safe_torch_load('Reddit/reddit.pt')
+train_loader = safe_torch_load('Reddit/0_10_0/train_sampler1.pt')
+val_loader = safe_torch_load('Reddit/0_10_0/val_sampler1.pt')
+test_loader = safe_torch_load('Reddit/0_10_0/test_sampler1.pt')
 
 system_instruction = "Don't have extra blank lines and symbols after Answer! "
 global_prompt = (
@@ -49,9 +49,10 @@ common_prompt = (
     "...\n"
     "Remember: Each user's non-causal text should occupy only one single line."
 )
-model_name = "gemma-2-9b-it"
-#llm = LlamaForCausalLM.from_pretrained(model_name).cuda()
-#tokenizer = LlamaTokenizer.from_pretrained(model_name)
+# Use a public model that does not require gated access.
+model_name = "microsoft/Phi-3.5-mini-instruct"
+# llm = LlamaForCausalLM.from_pretrained(model_name).cuda()
+# tokenizer = LlamaTokenizer.from_pretrained(model_name)
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 llm = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16).cuda()
 

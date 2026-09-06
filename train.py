@@ -32,7 +32,8 @@ parser.add_argument('--alpha', type=float, default=0.1)
 parser.add_argument('--beta', type=float, default=0.1)
 
 args = parser.parse_args()
-criterion = torch.nn.CrossEntropyLoss().cuda()
+device = get_device()
+criterion = torch.nn.CrossEntropyLoss().to(device)
 
 lora_config = LoraConfig(
     r=8,  # LoRA的秩 (rank)
@@ -47,11 +48,11 @@ llm = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16
 model = get_peft_model(llm, lora_config)
 model.print_trainable_parameters()
 
-data = torch.load('Reddit/reddit2.pt').cuda()
-train_loader = torch.load('Reddit/0_10_0/train_sampler2.pt')
+data = safe_torch_load('Reddit/reddit2.pt').to(device)
+train_loader = safe_torch_load('Reddit/0_10_0/train_sampler2.pt')
 random.shuffle(train_loader)
-val_loader = torch.load('Reddit/0_10_0/val_sampler2.pt')
-test_loader = torch.load('Reddit/0_10_0/test_sampler2.pt')
+val_loader = safe_torch_load('Reddit/0_10_0/val_sampler2.pt')
+test_loader = safe_torch_load('Reddit/0_10_0/test_sampler2.pt')
 
 encoder = SentenceTransformer("all-MiniLM-L6-v2")
 gnn_model = GCN(384, args.hidden, 2, args.dropout).cuda()

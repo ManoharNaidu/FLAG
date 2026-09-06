@@ -7,6 +7,18 @@ import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from torch_geometric.utils import subgraph, index_to_mask, k_hop_subgraph, mask_to_index
 
+
+def get_device():
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def safe_torch_load(path):
+    try:
+        return torch.load(path, weights_only=False)
+    except TypeError:
+        return torch.load(path)
+
+
 def generate_homo(data):
     labels = data.y
     edge_index = data.edge_index

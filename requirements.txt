@@ -1,0 +1,25 @@
+# Core scientific / ML stack
+numpy>=2.0.0
+scipy>=1.12.0
+sympy>=1.13.0
+scikit-learn>=1.3.0
+matplotlib>=3.8.0
+
+# PyTorch + graph neural network stack
+# Use a version compatible with your CUDA build or the CPU build.
+torch==2.6.0
+torch-geometric>=2.6.0
+torch-scatter>=2.1.2
+
+# Hugging Face / LLM stack
+transformers>=4.45.0
+huggingface-hub>=0.23.0
+sentence-transformers>=3.0.0
+peft>=0.12.0
+
+# Notes:
+# - filelock, fsspec, networkx, jinja2, typing-extensions, and packaging are pulled
+#   in automatically by PyTorch / Transformers.
+# - The project is GPU-first. On CPU-only machines, some scripts may need device checks.
+# - The chat scripts use a model from Hugging Face; choose a public model unless you have
+#   access to a gated/private repo.

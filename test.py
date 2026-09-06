@@ -33,17 +33,18 @@ parser.add_argument('--weight_decay', type=float, default=0,
 parser.add_argument('--patience', type=int, default=10)
 parser.add_argument('--path', type=str, default="Reddit/0_10_0/")
 args = parser.parse_args()
+device = get_device()
 
-# criterion = FocalLoss(alpha=0.5, gamma=2).cuda()
-data = torch.load('Reddit/reddit1.pt').cuda()
-criterion = torch.nn.CrossEntropyLoss().cuda()
-train_loader = torch.load(args.path + "train_loader1.pt")
+# criterion = FocalLoss(alpha=0.5, gamma=2).to(device)
+data = safe_torch_load('Reddit/reddit1.pt').to(device)
+criterion = torch.nn.CrossEntropyLoss().to(device)
+train_loader = safe_torch_load(args.path + "train_loader1.pt")
 random.shuffle(train_loader)
-val_loader = torch.load(args.path + "val_loader1.pt")
-test_loader = torch.load(args.path + "test_loader1.pt")
+val_loader = safe_torch_load(args.path + "val_loader1.pt")
+test_loader = safe_torch_load(args.path + "test_loader1.pt")
 # encoder = SentenceTransformer("all-MiniLM-L6-v2")
-embeddings = torch.load('Reddit/embeddings1.pt')
-embeddings = torch.Tensor(embeddings).cuda()
+embeddings = safe_torch_load('Reddit/embeddings1.pt')
+embeddings = torch.Tensor(embeddings).to(device)
 accumulation_steps = 10
 label0, label1 = [], []
 for batch in train_loader:

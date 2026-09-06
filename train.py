@@ -30,6 +30,9 @@ parser.add_argument('--weight_decay', type=float, default=5e-4,
 parser.add_argument('--patience', type=int, default=10)
 parser.add_argument('--alpha', type=float, default=0.1)
 parser.add_argument('--beta', type=float, default=0.1)
+parser.add_argument('--model', type=str, default="microsoft/Phi-3.5-mini-instruct",
+                    help='Hugging Face model name/path. Use a public model unless you have '
+                         'access to a gated repo (e.g. gemma-2-9b-it) and are authenticated.')
 
 args = parser.parse_args()
 device = get_device()
@@ -42,9 +45,11 @@ lora_config = LoraConfig(
     lora_dropout=0.1,  # dropout概率
     bias="none"  # 不调整模型中的bias项
 )
-model_name = "gemma-2-9b-it"
+model_name = args.model
+model_dtype = torch.float16 if device.type == "cuda" else torch.float32
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-llm = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16).cuda()
+model_config = load_model_config(model_name)
+llm = AutoModelForCausalLM.from_pretrained(model_name, config=model_config, dtype=model_dtype).to(device)
 model = get_peft_model(llm, lora_config)
 model.print_trainable_parameters()
 
@@ -55,8 +60,8 @@ val_loader = safe_torch_load('Reddit/0_10_0/val_sampler2.pt')
 test_loader = safe_torch_load('Reddit/0_10_0/test_sampler2.pt')
 
 encoder = SentenceTransformer("all-MiniLM-L6-v2")
-gnn_model = GCN(384, args.hidden, 2, args.dropout).cuda()
-state_dict = torch.load('Reddit/model_lora2/gnn.pth')
+gnn_model = GCN(384, args.hidden, 2, args.dropout).to(device)
+state_dict = torch.load('Reddit/model_lora2/gnn.pth', map_location=device)
 gnn_model.load_state_dict(state_dict)
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
@@ -140,20 +145,20 @@ def train_model(model, gnn_model, optimizer, train_loader):
             train.append(batch)
             continue
         unique_embeddings = encoder.encode(unique_result)
-        unique_embeddings = torch.Tensor(unique_embeddings).cuda()
+        unique_embeddings = torch.Tensor(unique_embeddings).to(device)
         common_embeddings = encoder.encode(common_result)
-        common_embeddings = torch.Tensor(common_embeddings).cuda()
+        common_embeddings = torch.Tensor(common_embeddings).to(device)
         batch.unique = unique_result
         batch.common = common_result
         batch.unique_embeddings = unique_embeddings
         batch.common_embeddings = common_embeddings
         train.append(batch)
-        unique_embeddings = gnn_model(unique_embeddings, batch.edge_index.cuda())
-        common_embeddings = gnn_model(common_embeddings, batch.edge_index.cuda())
+        unique_embeddings = gnn_model(unique_embeddings, batch.edge_index.to(device))
+        common_embeddings = gnn_model(common_embeddings, batch.edge_index.to(device))
         unique_embeddings = unique_embeddings[batch.subset == batch.central][0]
         unique_label = data.y[batch.central]
         common_embeddings = common_embeddings[batch.subset == batch.central][0]
-        loss = causal_loss(unique_embeddings, unique_label.cuda()) + \
+        loss = causal_loss(unique_embeddings, unique_label.to(device)) + \
                args.alpha * non_causal_loss(common_embeddings) + \
                args.beta * orthogonal_loss(unique_embeddings, common_embeddings)
         batch_loss += loss
@@ -173,12 +178,12 @@ def train_gnn(gnn_model, gnn_optimizer, train):
     gnn_optimizer.zero_grad()
     for i, batch in enumerate(train):
         if hasattr(batch, "unique"):
-            unique_embeddings = gnn_model(batch.unique_embeddings, batch.edge_index.cuda())
-            common_embeddings = gnn_model(batch.common_embeddings, batch.edge_index.cuda())
+            unique_embeddings = gnn_model(batch.unique_embeddings, batch.edge_index.to(device))
+            common_embeddings = gnn_model(batch.common_embeddings, batch.edge_index.to(device))
             unique_embeddings = unique_embeddings[batch.subset == batch.central][0]
             unique_label = data.y[batch.central]
             common_embeddings = common_embeddings[batch.subset == batch.central][0]
-            loss = causal_loss(unique_embeddings, unique_label.cuda()) + \
+            loss = causal_loss(unique_embeddings, unique_label.to(device)) + \
                    args.alpha * non_causal_loss(common_embeddings) + \
                    args.beta * orthogonal_loss(unique_embeddings, common_embeddings)
             batch_loss += loss
@@ -227,26 +232,26 @@ def val_model(model, gnn_model, val_loader):
             val.append(batch)
             continue
         unique_embeddings = encoder.encode(unique_result)
-        unique_embeddings = torch.Tensor(unique_embeddings).cuda()
+        unique_embeddings = torch.Tensor(unique_embeddings).to(device)
         common_embeddings = encoder.encode(common_result)
-        common_embeddings = torch.Tensor(common_embeddings).cuda()
+        common_embeddings = torch.Tensor(common_embeddings).to(device)
         batch.unique = unique_result
         batch.common = common_result
         batch.unique_embeddings = unique_embeddings
         batch.common_embeddings = common_embeddings
         val.append(batch)
-        unique_embeddings = gnn_model(unique_embeddings, batch.edge_index.cuda())
-        common_embeddings = gnn_model(common_embeddings, batch.edge_index.cuda())
+        unique_embeddings = gnn_model(unique_embeddings, batch.edge_index.to(device))
+        common_embeddings = gnn_model(common_embeddings, batch.edge_index.to(device))
         unique_embeddings = unique_embeddings[batch.subset == batch.central][0]
         unique_label = data.y[batch.central]
         common_embeddings = common_embeddings[batch.subset == batch.central][0]
-        loss = causal_loss(unique_embeddings, unique_label.cuda()) + \
+        loss = causal_loss(unique_embeddings, unique_label.to(device)) + \
                args.alpha * non_causal_loss(common_embeddings) + \
                args.beta * orthogonal_loss(unique_embeddings, common_embeddings)
         all_labels.append(unique_label.cpu().item())  # True labels
         all_predictions.append(F.sigmoid(unique_embeddings).detach().cpu().numpy())  # Model's predicted probabilities
         total_loss += float(loss.detach().cpu().numpy()) * 1
-        total_correct += int((unique_embeddings.argmax(dim=-1) == unique_label.cuda()).sum())
+        total_correct += int((unique_embeddings.argmax(dim=-1) == unique_label.to(device)).sum())
         total_examples += 1
     print(all_labels, all_predictions)
     roc_auc = roc_auc_score(np.array(all_labels), np.array(all_predictions)[:, 1])
@@ -261,18 +266,18 @@ def val_gnn(gnn_model, val):
     total_loss = total_correct = total_examples = 0
     for batch in val:
         if hasattr(batch, "unique"):
-            unique_embeddings = gnn_model(batch.unique_embeddings, batch.edge_index.cuda())
-            common_embeddings = gnn_model(batch.common_embeddings, batch.edge_index.cuda())
+            unique_embeddings = gnn_model(batch.unique_embeddings, batch.edge_index.to(device))
+            common_embeddings = gnn_model(batch.common_embeddings, batch.edge_index.to(device))
             unique_embeddings = unique_embeddings[batch.subset == batch.central][0]
             unique_label = data.y[batch.central]
             common_embeddings = common_embeddings[batch.subset == batch.central][0]
-            loss = causal_loss(unique_embeddings, unique_label.cuda()) + \
+            loss = causal_loss(unique_embeddings, unique_label.to(device)) + \
                    args.alpha * non_causal_loss(common_embeddings) + \
                    args.beta * orthogonal_loss(unique_embeddings, common_embeddings)
             all_labels.append(unique_label.cpu().item())  # True labels
             all_predictions.append(F.sigmoid(unique_embeddings).detach().cpu().numpy())  # Model's predicted probabilities
             total_loss += float(loss.detach().cpu().numpy()) * 1
-            total_correct += int((unique_embeddings.argmax(dim=-1) == unique_label.cuda()).sum())
+            total_correct += int((unique_embeddings.argmax(dim=-1) == unique_label.to(device)).sum())
             total_examples += 1
 
     roc_auc = roc_auc_score(np.array(all_labels), np.array(all_predictions)[:, 1])
@@ -298,7 +303,7 @@ def main(model, gnn_model, optimizer, gnn_optimizer, train_loader, val_loader, t
             if acc_val + roc_auc - loss_val > inner_best:
                 torch.save(gnn_model.state_dict(), 'Reddit/model_lora2/gnn.pth')
                 inner_best = acc_val + roc_auc - loss_val
-        state_dict = torch.load('Reddit/model_lora2/gnn.pth')
+        state_dict = torch.load('Reddit/model_lora2/gnn.pth', map_location=device)
         gnn_model.load_state_dict(state_dict)
 
 

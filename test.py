@@ -38,10 +38,10 @@ device = get_device()
 # criterion = FocalLoss(alpha=0.5, gamma=2).to(device)
 data = safe_torch_load('Reddit/reddit1.pt').to(device)
 criterion = torch.nn.CrossEntropyLoss().to(device)
-train_loader = safe_torch_load(args.path + "train_loader1.pt")
+train_loader = safe_torch_load(args.path + "train.pt")
 random.shuffle(train_loader)
-val_loader = safe_torch_load(args.path + "val_loader1.pt")
-test_loader = safe_torch_load(args.path + "test_loader1.pt")
+val_loader = safe_torch_load(args.path + "val.pt")
+test_loader = safe_torch_load(args.path + "test.pt")
 # encoder = SentenceTransformer("all-MiniLM-L6-v2")
 embeddings = safe_torch_load('Reddit/embeddings1.pt')
 embeddings = torch.Tensor(embeddings).to(device)
@@ -78,9 +78,9 @@ def train_gnn(model, optimizer, train_loader):
                 text_embeddings = torch.cat((text_embeddings, embeddings[1700].unsqueeze(0)), dim=0)
             else:
                 text_embeddings = torch.cat((text_embeddings, embeddings[0].unsqueeze(0)), dim=0)
-            edge_index = torch.cat((edge_index, torch.LongTensor([[0, 10], [10, 0]]).cuda()), dim=1)
+            edge_index = torch.cat((edge_index, torch.LongTensor([[0, 10], [10, 0]]).to(device)), dim=1)
         '''
-        emb32, output = model(data.x[batch.subset].cuda(), edge_index.cuda())
+        emb32, output = model(data.x[batch.subset].to(device), edge_index.to(device))
         emb32 = emb32[subset == batch.central][0]
         output = output[subset == batch.central][0]
         all_emb.append(output.detach().cpu().numpy())
@@ -89,9 +89,9 @@ def train_gnn(model, optimizer, train_loader):
         label = data.y[batch.central]
         all_labels.append(label.cpu().item())  # True labels
         all_predictions.append(F.sigmoid(output).detach().cpu().numpy())  # Model's predicted probabilities
-        loss = criterion(output, label.cuda())
+        loss = criterion(output, label.to(device))
         total_loss += float(loss) * 1
-        total_correct += int((output.argmax(dim=-1) == label.cuda()).sum())
+        total_correct += int((output.argmax(dim=-1) == label.to(device)).sum())
         total_examples += 1
         batch_loss += loss
         if (i + 1) % accumulation_steps == 0 and batch_loss != 0:
@@ -135,11 +135,11 @@ def test_gnn(model, test_loader):
                     if data.y[batch.central] == 0:
                         index = randint(0, len(label1) - 1)
                         text_embeddings[i] = embeddings[label1[index]]
-                        subset[i] = torch.LongTensor([label1[index]]).cuda()
+                        subset[i] = torch.LongTensor([label1[index]]).to(device)
                     else:
                         index = randint(0, len(label0) - 1)
                         text_embeddings[i] = embeddings[label0[index]]
-                        subset[i] = torch.LongTensor([label0[index]]).cuda()
+                        subset[i] = torch.LongTensor([label0[index]]).to(device)
                     #count -= 1
                     #if count == 0:
                         #break
@@ -148,9 +148,9 @@ def test_gnn(model, test_loader):
                 text_embeddings = torch.cat((text_embeddings, embeddings[0].unsqueeze(0)), dim=0)
             else:
                 text_embeddings = torch.cat((text_embeddings, embeddings[1700].unsqueeze(0)), dim=0)
-            edge_index = torch.cat((edge_index, torch.LongTensor([[0, 10, 10], [10, 0, 10]]).cuda()), dim=1)
+            edge_index = torch.cat((edge_index, torch.LongTensor([[0, 10, 10], [10, 0, 10]]).to(device)), dim=1)
             '''
-        emb32, output = model(data.x[batch.subset].cuda(), edge_index.cuda())
+        emb32, output = model(data.x[batch.subset].to(device), edge_index.to(device))
         emb32 = emb32[subset == batch.central][0]
         output = output[subset == batch.central][0]
         all_emb.append(output.cpu().numpy())
@@ -159,9 +159,9 @@ def test_gnn(model, test_loader):
         label = data.y[batch.central]
         all_labels.append(label.cpu().item())  # True labels
         all_predictions.append(F.sigmoid(output).cpu().numpy())  # Model's predicted probabilities
-        loss = criterion(output, label.cuda())
+        loss = criterion(output, label.to(device))
         total_loss += float(loss) * 1
-        total_correct += int((output.argmax(dim=-1) == label.cuda()).sum())
+        total_correct += int((output.argmax(dim=-1) == label.to(device)).sum())
         total_examples += 1
     #torch.save(all_emb, args.path + 'all_emb.pt')
     #torch.save(all_labels, args.path + 'all_label.pt')
@@ -184,7 +184,7 @@ def main_gnn(model, optimizer):
             torch.save(model.state_dict(), args.path + 'gnn.pth')
             best = f1_macro
 
-    state_dict = torch.load(args.path + 'gnn.pth')
+    state_dict = torch.load(args.path + 'gnn.pth', map_location=device)
     model.load_state_dict(state_dict)
 
     acc, loss, roc_auc, f1_macro, ece = test_gnn(model, test_loader)
@@ -198,9 +198,9 @@ for i in range(5):
     random.shuffle(train_loader)
     for j in range(1):
         # 4096 384
-        #gnn_model = GCN(4096, args.hidden, 2).cuda()
-        gnn_model = GeniePathLazy(4096, 2, 'cuda').cuda()
-        #gnn_model = DualGNN(2, gnn).cuda()
+        #gnn_model = GCN(4096, args.hidden, 2).to(device)
+        gnn_model = GeniePathLazy(4096, 2, device).to(device)
+        #gnn_model = DualGNN(2, gnn).to(device)
         optimizer_gnn = torch.optim.Adam(gnn_model.parameters(), lr=args.lr)
         acc, loss, roc_auc, f1_macro, ece = main_gnn(gnn_model, optimizer_gnn)
         acc_final.append(acc), auc_final.append(roc_auc), f1_final.append(f1_macro), ece_final.append(ece)

@@ -54,13 +54,17 @@ model_name = "microsoft/Phi-3.5-mini-instruct"
 # llm = LlamaForCausalLM.from_pretrained(model_name).cuda()
 # tokenizer = LlamaTokenizer.from_pretrained(model_name)
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-llm = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16).cuda()
+model_config = load_model_config(model_name)
+llm = AutoModelForCausalLM.from_pretrained(model_name, config=model_config, dtype=torch.float16).cuda()
 
 llm.eval()
 
-def generate_summary(batch, llm, tokenizer, max_retries=1):
+def generate_summary(batch, llm, tokenizer,dataset_type, max_retries=1):
+    print(f"\n \n \n*******************Generating summary for {dataset_type} batch********************\n")
     question = "The posts of these users are as follows:\n"
-    for i in range(len(batch.subset)):
+    l = len(batch.subset)
+    for i in range(l):
+        print(f"Processing user {i + 1}/{l} in {dataset_type} batch...")
         if len(data.raw_texts[batch.subset[i]]) > 1200:
             question += f"{i + 1}. [{data.raw_texts[batch.subset[i]][:1200]}]\n"
         else:
@@ -69,6 +73,7 @@ def generate_summary(batch, llm, tokenizer, max_retries=1):
     inputs = tokenizer(input_text, return_tensors="pt").to(llm.device)
     print(input_text)
     for attempt in range(max_retries):
+        print(f"Attempt {attempt + 1}/{max_retries} for generating summary for {dataset_type} batch...")
         outputs = llm.generate(**inputs, max_new_tokens=550)
         answer = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
@@ -78,6 +83,7 @@ def generate_summary(batch, llm, tokenizer, max_retries=1):
         results = [line.strip() for line in answer.split('\n') if line.strip()]
 
         if len(results) == len(batch.subset):
+            print(f"Successfully generated summary for {dataset_type} batch.")
             return results
         else:
             print(f"Format mismatch, retry {attempt + 1}/{max_retries}.")
@@ -88,7 +94,7 @@ def generate_summary(batch, llm, tokenizer, max_retries=1):
 
 train = []
 for batch in train_loader:
-    results = generate_summary(batch, llm, tokenizer)
+    results = generate_summary(batch, llm, tokenizer, dataset_type = "train")
     if results:
         batch.unique = results
         train.append(batch)
@@ -98,7 +104,7 @@ torch.save(train, 'Reddit/train.pt')
 
 val = []
 for batch in val_loader:
-    results = generate_summary(batch, llm, tokenizer)
+    results = generate_summary(batch, llm, tokenizer, dataset_type = "val")
     if results:
         batch.unique = results
         val.append(batch)

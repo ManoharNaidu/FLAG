@@ -12,9 +12,9 @@ from utils import get_device, safe_torch_load
 
 def ensure_split_files(data, path):
     split_paths = {
-        'train': path + 'train.pt',
-        'val': path + 'val.pt',
-        'test': path + 'test.pt',
+        'train': path + '_train.pt',
+        'val': path + '_val.pt',
+        'test': path + '_test.pt',
     }
 
     for split_name, split_path in split_paths.items():
@@ -55,28 +55,28 @@ def ensure_split_files(data, path):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--epochs', type=int, default=10,
+parser.add_argument('--epochs', type=int, default=5,
                     help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.01,
                     help='Initial learning rate.')
-parser.add_argument('--hidden', type=int, default=16,
+parser.add_argument('--hidden', type=int, default=8,
                     help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.5,
                     help='Dropout rate (1 - keep probability).')
-parser.add_argument('--weight_decay', type=float, default=5e-4,
+parser.add_argument('--weight_decay', type=float, default=2e-4,
                     help='Weight decay (L2 loss on parameters).')
-parser.add_argument('--patience', type=int, default=10)
+parser.add_argument('--patience', type=int, default=5)
 parser.add_argument('--path', type=str, default="Instagram/")
 args = parser.parse_args()
 
 device = get_device()
 criterion = torch.nn.CrossEntropyLoss().to(device)
 
-data = safe_torch_load('Instagram/instagram.pt')
+data = safe_torch_load(args.path + '.pt')
 ensure_split_files(data, args.path)
-train_loader = safe_torch_load(args.path + "train.pt")
-val_loader = safe_torch_load(args.path + "val.pt")
-test_loader = safe_torch_load(args.path + "test.pt")
+train_loader = safe_torch_load(args.path + "_train.pt")
+val_loader = safe_torch_load(args.path + "_val.pt")
+test_loader = safe_torch_load(args.path + "_test.pt")
 encoder = SentenceTransformer("all-MiniLM-L6-v2")
 
 train = []
@@ -90,7 +90,7 @@ for batch in train_loader:
     unique_embeddings = torch.Tensor(unique_embeddings).to(device)
     batch.unique_embeddings = unique_embeddings
     train.append(batch)
-torch.save(train, args.path + "train.pt")
+torch.save(train, args.path + "_train.pt")
 
 val = []
 for batch in val_loader:
@@ -103,7 +103,7 @@ for batch in val_loader:
     unique_embeddings = torch.Tensor(unique_embeddings).to(device)
     batch.unique_embeddings = unique_embeddings
     val.append(batch)
-torch.save(val, args.path + "val.pt")
+torch.save(val, args.path + "_val.pt")
 
 test = []
 for batch in test_loader:
@@ -116,4 +116,4 @@ for batch in test_loader:
     unique_embeddings = torch.Tensor(unique_embeddings).to(device)
     batch.unique_embeddings = unique_embeddings
     test.append(batch)
-torch.save(test, args.path + "test.pt")
+torch.save(test, args.path + "_test.pt")

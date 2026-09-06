@@ -60,7 +60,8 @@ llm = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16
 
 llm.eval()
 
-def generate_summary(batch, llm, tokenizer, max_retries=1):
+def generate_summary(batch, llm, tokenizer, max_retries=1, dataset_type):
+    print(f"\n \n \n*******************Generating summary for {dataset_type} batch********************\n")
     question = "The introductions of these users are as follows:\n"
     for i in range(len(batch.subset)):
         if len(data.raw_texts[batch.subset[i]]) > 1200:
@@ -90,8 +91,9 @@ def generate_summary(batch, llm, tokenizer, max_retries=1):
 
 train = []
 for batch in train_loader:
-    results = generate_summary(batch, llm, tokenizer)
+    results = generate_summary(batch, llm, tokenizer, dataset_type = "train")
     if results:
+        print(f"\n \n \n*******************Generated summary for train batch: {results}*******************\n")
         batch.unique = results
         train.append(batch)
     else:
@@ -100,8 +102,9 @@ torch.save(train, 'Instagram/train.pt')
 
 val = []
 for batch in val_loader:
-    results = generate_summary(batch, llm, tokenizer)
+    results = generate_summary(batch, llm, tokenizer, dataset_type = "val")
     if results:
+        print(f"\n \n \n*******************Generated summary for val batch: {results}*******************\n")
         batch.unique = results
         val.append(batch)
     else:
@@ -110,8 +113,9 @@ torch.save(val, 'Instagram/val.pt')
 
 test = []
 for batch in test_loader:
-    results = generate_summary(batch, llm, tokenizer)
+    results = generate_summary(batch, llm, tokenizer, dataset_type = "test")
     if results:
+        print(f"\n \n \n*******************Generated summary for test batch: {results}*******************\n")
         batch.unique = results
         test.append(batch)
     else:

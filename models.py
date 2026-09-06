@@ -50,9 +50,10 @@ class GraphSAGE(torch.nn.Module):
         initial_x = self.linear1(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.conv1(x=x, edge_index=edge_index).relu()
+        x32 = x
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.conv2(x=x, edge_index=edge_index)
-        return x
+        return x32, x + initial_x
 
 class GAT(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, dropout=0.5):
@@ -69,7 +70,7 @@ class GAT(torch.nn.Module):
         x32 = x
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.conv2(x=x, edge_index=edge_index)
-        return x32, x
+        return x32, x + initial_x
 
 
 class CaGCN(torch.nn.Module):

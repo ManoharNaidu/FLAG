@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -103,13 +105,17 @@ class LASAGE_S(nn.Module):
 
     def forward(self, x, edge_index, batch=None):
         initial_x = self.linear1(x)
+        x32 = x
         for layer in self.layers[:-1]:
             x = layer(x, edge_index)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
-            if len(x[0]) == 32:
-                x32 =x
+            # keep the last hidden activation; do not key this off a hardcoded
+            # hidden size of 32.
+            x32 = x
         x = self.layers[-1](x, edge_index)
+        # paper Eq. 6: Z = GNN(X, A) + Linear(X)
+        x = x + initial_x
         if batch is not None:
             x = global_mean_pool(x, batch)
         return x32, x

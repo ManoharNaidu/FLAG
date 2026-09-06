@@ -57,10 +57,13 @@ class DGA(nn.Module):
 
     def forward(self, x, edge_index):
         initial_x = self.linear1(x)
+        x32 = x
         for layer in self.layers:
             x = layer(x, edge_index)
             x = self.dropout(x)
-            if len(x[0]) == 32:
-                x32 =x
-        return x32, self.fc_out(x)
+            # keep the last hidden activation (before the output projection);
+            # do not key this off a hardcoded hidden size of 32.
+            x32 = x
+        # paper Eq. 6: Z = GNN(X, A) + Linear(X)
+        return x32, self.fc_out(x) + initial_x
 

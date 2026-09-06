@@ -48,4 +48,4 @@ class CAREGNN(torch.nn.Module):
         x32 = x
         # Second layer
         x = self.conv2(x, edge_index)
-        return x32, x
+        return x32, x + initial_x

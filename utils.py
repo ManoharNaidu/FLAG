@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
+from transformers import AutoConfig
 from sklearn.manifold import TSNE
 from torch_geometric.utils import subgraph, index_to_mask, k_hop_subgraph, mask_to_index
 
@@ -17,6 +18,24 @@ def safe_torch_load(path):
         return torch.load(path, weights_only=False)
     except TypeError:
         return torch.load(path)
+
+
+def load_model_config(model_name):
+    config = AutoConfig.from_pretrained(model_name)
+    rope_parameters = getattr(config, 'rope_parameters', None)
+    if isinstance(rope_parameters, dict):
+        original_max_position_embeddings = rope_parameters.get(
+            'original_max_position_embeddings'
+        )
+        max_position_embeddings = getattr(config, 'max_position_embeddings', None)
+        if original_max_position_embeddings and max_position_embeddings:
+            rope_parameters = dict(rope_parameters)
+            rope_parameters['factor'] = (
+                max_position_embeddings / original_max_position_embeddings
+            )
+            rope_parameters.pop('original_max_position_embeddings', None)
+            config.rope_parameters = rope_parameters
+    return config
 
 
 def generate_homo(data):
@@ -97,20 +116,74 @@ def causal_loss(causal_output, target_labels):
 
 def non_causal_loss(non_causal_output, num_classes=2):
     """
-    KL-divergence loss to compare non-causal output with a uniform distribution.
+    Residual loss, paper Eq. 8:  L_Res = D_KL( p_hat || u_hat )
+
+    ``p_hat`` is the model's predicted distribution over classes and ``u_hat``
+    is the uniform distribution.  Note that ``F.kl_div(input, target)`` computes
+    ``KL(target || input)``, i.e. the *reverse* of what the paper asks for, so
+    the divergence is computed explicitly here instead.
+
+    Works for both a 1-D ``(C,)`` logit vector and a batched ``(N, C)`` one; the
+    divergence is taken over the last dimension and averaged over the batch.
     """
-    uniform_dist = torch.full_like(non_causal_output, 1.0 / num_classes)  # uniform distribution [0.5, 0.5] for 2 classes
-    non_causal_output_log = F.log_softmax(non_causal_output, dim=0)  # Log softmax for non-causal output
-    return F.kl_div(non_causal_output_log, uniform_dist, reduction='batchmean')
+    log_p = F.log_softmax(non_causal_output, dim=-1)
+    p = log_p.exp()
+    log_u = torch.log(torch.full_like(log_p, 1.0 / num_classes))
+    kl = (p * (log_p - log_u)).sum(dim=-1)  # KL(p_hat || u_hat) per sample
+    return kl.mean()
 
 def orthogonal_loss(causal_embeddings, non_causal_embeddings):
     """
-    Cosine similarity loss to enforce orthogonality between causal and non-causal embeddings.
+    Orthogonality loss, paper Eq. 9:  L_Orthog = || Z_D . Z_R ||^2_2
+
+    Returns the SQUARED dot product of the L2-normalised representations, so the
+    minimum (0) is attained exactly at orthogonality.  The raw signed cosine
+    similarity would instead be minimised by anti-parallel vectors (-1), which
+    is not what the paper specifies.
+
+    Works for both 1-D ``(C,)`` and batched ``(N, C)`` inputs; the dot product is
+    taken over the last dimension and the squared value averaged over the batch.
     """
-    causal_norm = F.normalize(causal_embeddings, p=2, dim=0)
-    non_causal_norm = F.normalize(non_causal_embeddings, p=2, dim=0)
-    cosine_similarity = torch.sum(causal_norm * non_causal_norm)  # Cosine similarity
-    return cosine_similarity  # Minimize cosine similarity to enforce orthogonality
+    causal_norm = F.normalize(causal_embeddings, p=2, dim=-1)
+    non_causal_norm = F.normalize(non_causal_embeddings, p=2, dim=-1)
+    cosine_similarity = torch.sum(causal_norm * non_causal_norm, dim=-1)
+    return (cosine_similarity ** 2).mean()
+
+
+def ECELoss(logits, labels, n_bins=15):
+    """
+    Expected Calibration Error with ``n_bins`` equal-width confidence bins.
+
+    Confidence is the max softmax probability, the prediction is the argmax.
+    Returns the bin-count-weighted average of ``|accuracy - confidence|`` as a
+    plain Python ``float`` (callers feed the result to ``statistics.mean``).
+    """
+    if not torch.is_tensor(logits):
+        logits = torch.as_tensor(logits)
+    if not torch.is_tensor(labels):
+        labels = torch.as_tensor(labels)
+    logits = logits.detach().float()
+    if logits.dim() == 1:
+        logits = logits.unsqueeze(0)
+    labels = labels.detach().reshape(-1).long()
+
+    if logits.size(0) == 0:
+        return 0.0
+
+    softmaxes = F.softmax(logits, dim=-1)
+    confidences, predictions = torch.max(softmaxes, dim=-1)
+    accuracies = predictions.eq(labels)
+
+    bin_boundaries = torch.linspace(0, 1, n_bins + 1, device=logits.device)
+    ece = torch.zeros(1, device=logits.device)
+    for bin_lower, bin_upper in zip(bin_boundaries[:-1], bin_boundaries[1:]):
+        in_bin = confidences.gt(bin_lower.item()) & confidences.le(bin_upper.item())
+        prop_in_bin = in_bin.float().mean()
+        if prop_in_bin.item() > 0:
+            accuracy_in_bin = accuracies[in_bin].float().mean()
+            avg_confidence_in_bin = confidences[in_bin].mean()
+            ece += torch.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
+    return float(ece.item())
 
 
 class FocalLoss(nn.Module):
